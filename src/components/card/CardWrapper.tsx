@@ -8,7 +8,12 @@ import { Music, Settings, Volume2, VolumeX, Sparkles } from "lucide-react";
 import BackgroundMusic from "./BackgroundMusic";
 import ShareControl from "./ShareControl";
 import CardAnimations from "./CardAnimations";
+import GoogleApiKeySettings from "./GoogleApiKeySettings";
+import AIContentPanel from "./AIContentPanel";
 import { CARD_TYPES, CardConfig, AnimationType, ANIMATION_MODES, REAL_CARD_SIZE } from "@/data/cardOptions";
+import { googleAIService, GeneratedMessage } from "@/services/googleAIService";
+import { zhipuAIService, ZhipuGeneratedMessage } from "@/services/zhipuAIService";
+import { imageGenerationService } from "@/services/imageGenService";
 
 export default function CardWrapper() {
     const [isOpen, setIsOpen] = useState(false);
@@ -18,8 +23,54 @@ export default function CardWrapper() {
     const [showSettings, setShowSettings] = useState(false);
     const [volume, setVolume] = useState(0.7);
     const [showConfetti, setShowConfetti] = useState(false);
+    const [customConfig, setCustomConfig] = useState<Partial<CardConfig> | null>(null);
 
-    const activeConfig = CARD_TYPES.find(c => c.id === currentCardId) || CARD_TYPES[0];
+    const activeConfig = customConfig && customConfig.id === currentCardId
+        ? { ...CARD_TYPES.find(c => c.id === currentCardId)!, ...customConfig }
+        : CARD_TYPES.find(c => c.id === currentCardId) || CARD_TYPES[0];
+
+    // 处理API Key变化
+    const handleApiKeyChange = (provider: 'google' | 'zhipu', apiKey: string | null) => {
+        if (apiKey) {
+            if (provider === 'google') {
+                googleAIService.setApiKey(apiKey);
+                imageGenerationService.setApiKey(apiKey);
+            } else {
+                zhipuAIService.setApiKey(apiKey);
+            }
+        } else {
+            if (provider === 'google') {
+                googleAIService.clearApiKey();
+                imageGenerationService.clearApiKey();
+            } else {
+                zhipuAIService.clearApiKey();
+            }
+        }
+    };
+
+    // 处理AI生成的祝福语
+    const handleMessageGenerated = (message: GeneratedMessage | ZhipuGeneratedMessage) => {
+        setCustomConfig({
+            id: currentCardId,
+            inside: {
+                ...activeConfig.inside,
+                title: message.title,
+                message: message.message,
+                signature: message.signature
+            }
+        });
+    };
+
+    // 处理AI生成的图片
+    const handleImageGenerated = (imageUrl: string) => {
+        setCustomConfig({
+            id: currentCardId,
+            inside: {
+                ...activeConfig.inside,
+                mediaUrl: imageUrl
+            }
+        });
+    };
 
     const toggleOpen = () => {
         const newState = !isOpen;
@@ -116,6 +167,14 @@ export default function CardWrapper() {
                 animate={{ y: 0, opacity: 1 }}
                 className="fixed top-4 right-4 flex gap-2 z-50"
             >
+                <GoogleApiKeySettings onApiKeyChange={handleApiKeyChange} />
+
+                <AIContentPanel
+                    currentCardId={currentCardId}
+                    onMessageGenerated={handleMessageGenerated}
+                    onImageGenerated={handleImageGenerated}
+                />
+
                 <button
                     onClick={() => setShowSettings(!showSettings)}
                     className={cn(
@@ -198,7 +257,7 @@ export default function CardWrapper() {
 
             {activeConfig.musicUrl && (
                 <div key={activeConfig.musicUrl}>
-                    <BackgroundMusic isPlaying={isPlaying} src={activeConfig.musicUrl} volume={volume} />
+                    <BackgroundMusic isPlaying={isPlaying} src={activeConfig.musicUrl} />
                 </div>
             )}
 
@@ -268,6 +327,7 @@ export default function CardWrapper() {
                             setCurrentCardId(type.id);
                             setIsOpen(false);
                             setIsPlaying(false);
+                            setCustomConfig(null); // 清除自定义配置
                         }}
                         className={cn(
                             "flex flex-col items-center justify-center p-3 rounded-xl min-w-[70px] transition-all duration-300 gap-1 relative",
